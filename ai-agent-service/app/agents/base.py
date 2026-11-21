@@ -8,7 +8,7 @@ class AgentInterface(ABC):
 
     @abstractmethod
     async def generate(
-        self, message: str, chat_history: List[ChatMessage], tools: List[Dict[str, Any]]
+        self, message: str, chat_history: List[ChatMessage], token: str
     ) -> str:
         """
         Generate a response from the AI agent
@@ -16,7 +16,7 @@ class AgentInterface(ABC):
         Args:
             message: The user's message
             chat_history: Previous conversation history
-            tools: Available tools for the agent to use
+            token: The user's own API token; tools act on behalf of this user
 
         Returns:
             The agent's response

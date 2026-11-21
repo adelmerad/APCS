@@ -28,7 +28,7 @@ This Service relies on the following Environement variables
 |Variable|Value|
 |:------:|:---:|
 |API_BASE_URL| Http URL to the API layer (backend)|
-|API_SERVICE_TOKEN| Service Token so that the service authenticates to the main backend|
+|GEMINI_API_KEY| Gemini API key|
 |OLLAMA_BASE_URL| Http URL to the Ollama LLM Server|
 |OLLAMA_MODEL| Ollama Model Name|
 
@@ -49,13 +49,18 @@ The AI Service exposes 1 REST Endpoint
 
 > This endpoint is responsible for the generation of 1 ai answer
 
+The request must carry the **user's own token** (`Authorization: Bearer <sanctum token>`), sent by the Laravel backend. The assistant acts on behalf of that user: its tools forward the token to `/api/internal/tools/*`, where Laravel identifies the user and checks ownership. There is no `user_id` in the request and no tool takes one, so a message like "I'm user 12" cannot make the assistant read someone else's data. Requests without a token get `401`.
+
 Example Request Body:
 
 ```json
 {
     "chat_id": "C1234",
-    "user_id": "U12054-0220",
-    "message": "What is the availability tomorrow at 8 pm."
+    "message": "What is the availability tomorrow at 8 pm.",
+    "messages": [
+        {"sender": "human", "message": "Hello"},
+        {"sender": "agent", "message": "Hi! How can I help?"}
+    ]
 }
 ```
 
@@ -67,4 +72,12 @@ Example Response Body:
     "message": "Sure thing, the availability on the 07-02-2026 at 8pm is quite good, since there is only 8 bookings out of the maximum amount of 15..."
 
 }
+```
+
+### Tests
+
+`test/test_tool_security.py` runs offline (no Gemini key, no backend): a fake model tries to pass a forged `user_id`, and the test checks that only the user's token reaches the tools, that several tool rounds work, and that the endpoint refuses calls without a token.
+
+```bash
+pytest test/test_tool_security.py -v
 ```

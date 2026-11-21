@@ -3,22 +3,24 @@ from typing import List, Optional, Literal
 from datetime import datetime
 
 
+class ChatMessage(BaseModel):
+    message_id: Optional[str] = None
+    sender: Literal["human", "agent"]
+    message: str
+    index: Optional[int] = None
+    created_at: Optional[str] = None
+
+
 class GenerateRequest(BaseModel):
-    user_id: str
+    # No user_id here: the user is identified by the token in the
+    # Authorization header, which the backend checks itself.
     chat_id: str
     message: str
+    messages: List[ChatMessage] = []
 
 
 class GenerateResponse(BaseModel):
     message: str
-
-
-class ChatMessage(BaseModel):
-    message_id: str
-    sender: Literal["human", "agent"]
-    message: str
-    index: int
-    created_at: str
 
 
 class Timeslot(BaseModel):
@@ -42,22 +44,3 @@ class ScheduleSlot(BaseModel):
 class PortSchedule(BaseModel):
     date: str
     schedule: List[ScheduleSlot]
-
-
-# Tool request/response models
-class BookingStatusRequest(BaseModel):
-    booking_id: str
-    user_id: str
-
-
-class UserBookingsRequest(BaseModel):
-    user_id: str
-    date: str
-    hour: str
-
-
-class PortScheduleRequest(BaseModel):
-    terminal_id: str
-    date: str
-    user_id: str
-    user_role: str

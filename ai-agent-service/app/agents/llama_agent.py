@@ -8,7 +8,7 @@ Thus this module is currently only experimental and should be tested before bein
 import json
 import ollama
 from typing import List, Dict, Any
-from app.tools import get_booking_status, get_port_schedule, get_user_bookings
+from tools import get_booking_status, get_port_schedule, get_user_bookings
 from models import ChatMessage
 from agents.base import AgentInterface
 from config import get_settings
@@ -23,7 +23,7 @@ class LlamaAgent(AgentInterface):
         self.system_prompt = self._load_system_prompt()
 
     async def generate(
-        self, message: str, chat_history: List[ChatMessage], tools: List[Dict[str, Any]]
+        self, message: str, chat_history: List[ChatMessage], token: str
     ) -> str:
         """Generate response using Llama via Ollama"""
 
@@ -31,7 +31,7 @@ class LlamaAgent(AgentInterface):
         conversation = self._build_conversation(chat_history, message)
 
         # Generate with tool calling
-        response = await self._generate_with_tools(conversation, message)
+        response = await self._generate_with_tools(conversation, message, token)
 
         return response
 
@@ -48,7 +48,9 @@ class LlamaAgent(AgentInterface):
         context += f"\nUser: {current_message}\nAssistant:"
         return context
 
-    async def _generate_with_tools(self, context: str, user_message: str) -> str:
+    async def _generate_with_tools(
+        self, context: str, user_message: str, token: str
+    ) -> str:
         """Generate response with tool calling capability"""
 
         response_text = ""
@@ -63,7 +65,7 @@ class LlamaAgent(AgentInterface):
             for word in words:
                 if word.startswith("BK") or word.startswith("bk"):
                     try:
-                        booking = await get_booking_status(word.upper(), "U456")
+                        booking = await get_booking_status(word.upper(), token)
                         response_text = (
                             f"Booking {booking.booking_id} is {booking.status}. "
                         )
@@ -81,7 +83,7 @@ class LlamaAgent(AgentInterface):
                 from datetime import date
 
                 today = date.today().isoformat()
-                bookings = await get_user_bookings("U456", today, "14")
+                bookings = await get_user_bookings(today, None, token)
 
                 if bookings:
                     response_text = f"You have {len(bookings)} booking(s) today:\n"
@@ -103,7 +105,7 @@ class LlamaAgent(AgentInterface):
 
                 today = date.today().isoformat()
 
-                schedule = await get_port_schedule(today)
+                schedule = await get_port_schedule(today, token)
 
                 response_text = f"Schedule on {schedule.date}:\n"
 

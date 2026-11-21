@@ -44,7 +44,8 @@ def ai_client(check_services):
     def send_message(message: str) -> Dict:
         response = requests.post(
             AI_URL,
-            json={"chat_id": "chat_abc123", "message": message, "user_id": "U456"},
+            json={"chat_id": "chat_abc123", "message": message},
+            headers={"Authorization": "Bearer mock-token-U456"},
             timeout=TIMEOUT,
         )
         response.raise_for_status()

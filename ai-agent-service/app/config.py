@@ -4,7 +4,6 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     api_base_url: str
-    api_service_token: str
 
     ai_provider: str = "gemini"  # gemini or llama
 
@@ -16,6 +15,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"
 
 
 @lru_cache()

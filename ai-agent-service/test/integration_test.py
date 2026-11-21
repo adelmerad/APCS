@@ -44,7 +44,8 @@ def ai_client(check_services):
     def send_message(message: str) -> Dict:
         response = requests.post(
             AI_URL,
-            json={"chat_id": "chat_abc123", "message": message, "user_id": "U456"},
+            json={"chat_id": "chat_abc123", "message": message},
+            headers={"Authorization": "Bearer mock-token-U456"},
             timeout=TIMEOUT,
         )
         response.raise_for_status()
@@ -68,8 +69,8 @@ class TestMockAPIDirectly:
         """Test booking status endpoint"""
         response = requests.post(
             f"{MOCK_API_URL}/api/internal/tools/booking-status",
-            json={"booking_id": "BK123", "user_id": "U456"},
-            headers={"Authorization": "Bearer mock-service-token"},
+            json={"booking_id": "BK123"},
+            headers={"Authorization": "Bearer mock-token-U456"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -80,8 +81,8 @@ class TestMockAPIDirectly:
         """Test user bookings endpoint"""
         response = requests.post(
             f"{MOCK_API_URL}/api/internal/tools/user-bookings",
-            json={"user_id": "U456", "date": "2024-02-07", "hour": "14"},
-            headers={"Authorization": "Bearer mock-service-token"},
+            json={"date": "2024-02-07", "hour": "14"},
+            headers={"Authorization": "Bearer mock-token-U456"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -95,10 +96,8 @@ class TestMockAPIDirectly:
             json={
                 "terminal_id": "T1",
                 "date": "2024-02-07",
-                "user_id": "U456",
-                "user_role": "operator",
             },
-            headers={"Authorization": "Bearer mock-service-token"},
+            headers={"Authorization": "Bearer mock-token-U456"},
         )
         assert response.status_code == 200
         data = response.json()

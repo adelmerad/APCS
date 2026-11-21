@@ -60,22 +60,20 @@ class Chat(BaseModel):
     created_at: str
 
 
+# Like the real backend, the tools endpoints never take a user_id:
+# the user is identified by the bearer token.
 class BookingStatusRequest(BaseModel):
     booking_id: str
-    user_id: str
 
 
 class UserBookingsRequest(BaseModel):
-    user_id: str
     date: str
-    hour: str
+    hour: Optional[str] = None
 
 
 class PortScheduleRequest(BaseModel):
-    terminal_id: str
     date: str
-    user_id: str
-    user_role: str
+    terminal_id: str = "T1"
 
 
 class ScheduleSlot(BaseModel):
@@ -415,8 +413,20 @@ TERMINAL_SCHEDULES = {
 # ============================================================================
 
 
-def verify_token(authorization: Optional[str] = Header(None)):
-    pass
+# Mock user tokens (stand-ins for Sanctum tokens)
+MOCK_TOKENS = {
+    "mock-token-U456": "U456",
+    "mock-token-U789": "U789",
+}
+
+
+def verify_token(authorization: Optional[str] = Header(None)) -> str:
+    """Return the user that owns the token, or 401"""
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    user_id = MOCK_TOKENS.get(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Unauthenticated")
+    return user_id
 
 
 # ============================================================================
@@ -457,7 +467,7 @@ async def get_booking_status(
     request: BookingStatusRequest, authorization: Optional[str] = Header(None)
 ):
     """Get booking status for a specific booking ID"""
-    verify_token(authorization)
+    user_id = verify_token(authorization)
 
     booking = BOOKINGS_DB.get(request.booking_id)
 
@@ -467,7 +477,7 @@ async def get_booking_status(
         )
 
     # Verify user owns this booking
-    if booking["user_id"] != request.user_id:
+    if booking["user_id"] != user_id:
         raise HTTPException(
             status_code=403, detail="You don't have access to this booking"
         )
@@ -483,17 +493,17 @@ async def get_booking_status(
 async def get_user_bookings(
     request: UserBookingsRequest, authorization: Optional[str] = Header(None)
 ):
-    """Get all bookings for a user on a specific date and hour"""
-    verify_token(authorization)
+    """Get the current user's bookings on a date (and optionally an hour)"""
+    user_id = verify_token(authorization)
 
     # Filter bookings by user_id, date, and hour
     user_bookings = []
 
     for booking_id, booking in BOOKINGS_DB.items():
         if (
-            booking["user_id"] == request.user_id
+            booking["user_id"] == user_id
             and booking["timeslot"]["date"] == request.date
-            and booking["timeslot"]["hour_start"] == request.hour
+            and (request.hour is None or booking["timeslot"]["hour_start"] == request.hour)
         ):
 
             user_bookings.append(
