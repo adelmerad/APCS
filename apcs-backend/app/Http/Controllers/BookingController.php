@@ -9,6 +9,7 @@ use App\Models\Timeslot;
 use Dotenv\Validator;
 use Illuminate\Container\Attributes\Auth;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class BookingController extends Controller
 {
@@ -101,19 +102,24 @@ class BookingController extends Controller
             ]
         );
 
-        // Check capacity
-        $bookedCount = Booking::where('timeslot_id', $timeslot->timeslot_id)->count();
-        if ($bookedCount >= $timeslot->capacity) {
+        // Check capacity and insert in one transaction. The slot row is locked,
+        // so two carriers cannot both take the last place at the same moment.
+        $booking = DB::transaction(function () use ($request, $timeslot) {
+            if (!$this->hasRoom($timeslot)) {
+                return null;
+            }
+
+            return Booking::create([
+                'user_id' => $request->user()->id,
+                'truck_number' => $request->truck_number,
+                'timeslot_id' => $timeslot->id,
+                'status' => 'pending',
+            ]);
+        });
+
+        if (!$booking) {
             return response()->json(['error' => 'Timeslot is full'], 400);
         }
-
-        // Create booking
-        $booking = Booking::create([
-            'user_id' => $request->user()->id,
-            'truck_number' => $request->truck_number,
-            'timeslot_id' => $timeslot->id,
-            'status' => 'pending',
-        ]);
 
         // Log the action
         Log::create([
@@ -146,7 +152,7 @@ class BookingController extends Controller
         }
 
         // Check if user owns the booking
-        if ($booking->user_id !== $request->user()->user_id && $request->user()->role !== 'admin') {
+        if ($booking->user_id !== $request->user()->id && $request->user()->role !== 'admin') {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -205,15 +211,21 @@ class BookingController extends Controller
             ]);
         }
 
-        // Check capacity
-        $bookedCount = Booking::where('timeslot_id', $newTimeslot->id)->count();
-        if ($bookedCount >= $newTimeslot->capacity) {
+        $oldTimeslotId = $booking->timeslot_id;
+
+        // Same check-then-write as createBooking, under a lock on the new slot
+        $moved = DB::transaction(function () use ($booking, $newTimeslot) {
+            if (!$this->hasRoom($newTimeslot)) {
+                return false;
+            }
+            $booking->timeslot_id = $newTimeslot->id;
+            $booking->save();
+            return true;
+        });
+
+        if (!$moved) {
             return response()->json(['error' => 'New timeslot is full'], 400);
         }
-
-        $oldTimeslotId = $booking->timeslot_id;
-        $booking->timeslot_id = $newTimeslot->id;
-        $booking->save();
 
         // Log the action
         Log::create([
@@ -256,5 +268,20 @@ class BookingController extends Controller
         return response()->json([
             'message' => 'Booking deleted successfully',
         ]);
+    }
+
+    /**
+     * Must be called inside a transaction: locks the slot row, then counts its
+     * active bookings (pending or in; "out" frees the place).
+     */
+    private function hasRoom(Timeslot $timeslot): bool
+    {
+        $slot = Timeslot::whereKey($timeslot->id)->lockForUpdate()->first();
+
+        $active = Booking::where('timeslot_id', $slot->id)
+            ->whereIn('status', ['pending', 'in'])
+            ->count();
+
+        return $active < $slot->capacity;
     }
 }

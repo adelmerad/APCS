@@ -8,7 +8,7 @@ use App\Http\Controllers\GateController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ChatController;
-use App\Http\Controllers\AIController;
+use App\Http\Controllers\AiController;
 use App\Http\Controllers\InternalToolsController;
 
 
@@ -59,11 +59,16 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
 
     // Config routes
     Route::post('/config/capacity', [AdminController::class, 'updateCapacity']);
+});
 
-    Route::prefix('internal/tools')->group(function () {
-        Route::post('/booking-status', [InternalToolsController::class, 'getBookingStatus']);
-        Route::post('/user-bookings', [InternalToolsController::class, 'getUserBookings']);
-        Route::post('/port-schedule', [InternalToolsController::class, 'getPortSchedule']);
-        Route::post('/available-slots', [InternalToolsController::class, 'getAvailableSlots']);
-    });
+// AI assistant
+// The assistant service calls the tools with the user's own token, so these
+// routes see the real user and apply the same ownership rules as the app.
+Route::middleware('auth:sanctum')->post('/ai/generate', [AiController::class, 'generateMessage']);
+
+Route::middleware('auth:sanctum')->prefix('internal/tools')->group(function () {
+    Route::post('/booking-status', [InternalToolsController::class, 'getBookingStatus']);
+    Route::post('/user-bookings', [InternalToolsController::class, 'getUserBookings']);
+    Route::post('/port-schedule', [InternalToolsController::class, 'getPortSchedule']);
+    Route::post('/available-slots', [InternalToolsController::class, 'getAvailableSlots']);
 });

@@ -8,6 +8,7 @@ use App\Models\Log;
 use App\Models\Timeslot;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 
@@ -32,7 +33,7 @@ class GateController extends Controller
         }
 
         // Check if user owns the booking
-        if ($booking->user_id !== Auth::user()->user_id && Auth::user()->role !== 'admin') {
+        if ($booking->user_id !== Auth::user()->id && Auth::user()->role !== 'admin') {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -76,16 +77,41 @@ class GateController extends Controller
             'qr' => 'required|string',
         ]);
 
-        $qrCode = QrCode::where('qr', $request->qr)->first();
+        // One transaction with the QR row locked: two scans of the same code
+        // at the same moment cannot both let the truck in.
+        return DB::transaction(fn () => $this->processScan($request->qr));
+    }
+
+    /**
+     * Check a QR code and register the arrival. The code is consumed
+     * (used_at is set) only when the truck is actually let in.
+     */
+    private function processScan(string $qr)
+    {
+        $qrCode = QrCode::where('qr', $qr)->lockForUpdate()->first();
 
         if (!$qrCode) {
             return response()->json(['error' => 'Invalid QR code'], 404);
+        }
+
+        if ($qrCode->used_at) {
+            return response()->json([
+                'error' => 'QR code already used',
+                'message' => "This QR code was already scanned at {$qrCode->used_at}",
+            ], 409);
         }
 
         $booking = Booking::with('timeslot')->find($qrCode->booking_id);
 
         if (!$booking) {
             return response()->json(['error' => 'Booking not found'], 404);
+        }
+
+        if ($booking->status !== 'pending') {
+            return response()->json([
+                'error' => 'Booking is not waiting for arrival',
+                'message' => "Current status: {$booking->status}",
+            ], 409);
         }
 
         $currentTime = Carbon::now();
@@ -115,6 +141,7 @@ class GateController extends Controller
             // Truck is on time - normal check-in
             $booking->status = 'in';
             $booking->save();
+            $qrCode->update(['used_at' => $currentTime]);
 
             Log::create([
                 'code' => 'CARRIER_ARRIVED',
@@ -134,6 +161,12 @@ class GateController extends Controller
             // Truck is late - need to find available late slot
             $result = $this->handleLateArrival($booking, $currentTime);
 
+            if (isset($result['error'])) {
+                return response()->json($result, 409);
+            }
+
+            $qrCode->update(['used_at' => $currentTime]);
+
             return response()->json($result);
         }
     }
@@ -146,7 +179,7 @@ class GateController extends Controller
         $originalTimeslot = $booking->timeslot;
 
         // Count regular (on-time) bookings in original timeslot
-        $regularBookingsInOriginal = Booking::where('timeslot_id', $originalTimeslot->timeslot_id)
+        $regularBookingsInOriginal = Booking::where('timeslot_id', $originalTimeslot->id)
             ->where('status', 'in')
             ->count();
 
@@ -170,7 +203,7 @@ class GateController extends Controller
                 'truck_number' => $booking->truck_number,
                 'status' => $booking->status,
                 'arrival_type' => 'late_original_slot',
-                'timeslot_id' => $originalTimeslot->timeslot_id,
+                'timeslot_id' => $originalTimeslot->id,
             ];
         }
 
@@ -180,18 +213,18 @@ class GateController extends Controller
         if ($nextAvailableSlot) {
             // Move booking to the new timeslot
             $oldTimeslotId = $booking->timeslot_id;
-            $booking->timeslot_id = $nextAvailableSlot->timeslot_id;
+            $booking->timeslot_id = $nextAvailableSlot->id;
             $booking->status = 'in';
             $booking->save();
 
             Log::create([
                 'code' => 'MODIFIED_BOOKING',
-                'message' => "Truck {$booking->truck_number} arrived LATE. Booking {$booking->id} moved from timeslot {$oldTimeslotId} to {$nextAvailableSlot->timeslot_id} (late slot)",
+                'message' => "Truck {$booking->truck_number} arrived LATE. Booking {$booking->id} moved from timeslot {$oldTimeslotId} to {$nextAvailableSlot->id} (late slot)",
             ]);
 
             Log::create([
                 'code' => 'CARRIER_ARRIVED',
-                'message' => "Truck {$booking->truck_number} arrived LATE and accommodated in timeslot {$nextAvailableSlot->timeslot_id} late capacity",
+                'message' => "Truck {$booking->truck_number} arrived LATE and accommodated in timeslot {$nextAvailableSlot->id} late capacity",
             ]);
 
             return [
@@ -201,7 +234,7 @@ class GateController extends Controller
                 'status' => $booking->status,
                 'arrival_type' => 'late_rescheduled',
                 'original_timeslot_id' => $oldTimeslotId,
-                'new_timeslot_id' => $nextAvailableSlot->timeslot_id,
+                'new_timeslot_id' => $nextAvailableSlot->id,
                 'new_timeslot' => [
                     'date' => $nextAvailableSlot->date,
                     'hour_start' => $nextAvailableSlot->hour_start,
@@ -244,7 +277,7 @@ class GateController extends Controller
 
         foreach ($timeslots as $slot) {
             // Count current bookings in this slot
-            $currentBookings = Booking::where('timeslot_id', $slot->timeslot_id)
+            $currentBookings = Booking::where('timeslot_id', $slot->id)
                 ->where('status', 'in')
                 ->count();
 
@@ -269,7 +302,7 @@ class GateController extends Controller
         }
 
         $request->validate([
-            'booking_id' => 'required|exists:bookings,booking_id',
+            'booking_id' => 'required|exists:bookings,id',
         ]);
 
         $booking = Booking::with('timeslot')->find($request->booking_id);
@@ -299,17 +332,17 @@ class GateController extends Controller
         // Log shipment completion
         Log::create([
             'code' => 'SHIPMENT_CONSUMED',
-            'message' => "Truck {$booking->truck_number} completed shipment for booking {$booking->booking_id}. Slot freed. Occupancy: {$currentOccupancy} -> {$newOccupancy}",
+            'message' => "Truck {$booking->truck_number} completed shipment for booking {$booking->id}. Slot freed. Occupancy: {$currentOccupancy} -> {$newOccupancy}",
         ]);
 
         return response()->json([
             'message' => 'Shipment marked as completed and slot freed',
-            'booking_id' => $booking->booking_id,
+            'booking_id' => $booking->id,
             'truck_number' => $booking->truck_number,
             'status' => $booking->status,
             'timeslot_freed' => true,
             'timeslot_info' => [
-                'timeslot_id' => $booking->timeslot->timeslot_id,
+                'timeslot_id' => $booking->timeslot->id,
                 'date' => $booking->timeslot->date,
                 'hour_start' => $booking->timeslot->hour_start,
                 'previous_occupancy' => $currentOccupancy,

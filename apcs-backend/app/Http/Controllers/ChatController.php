@@ -18,7 +18,7 @@ class ChatController extends Controller
     public function createChat()
     {
         $chat = Chat::create([
-            'user_id' => Auth::user()->user_id,
+            'user_id' => Auth::user()->id,
         ]);
 
         return response()->json([
@@ -44,7 +44,7 @@ class ChatController extends Controller
         }
 
         // Check if user owns the chat
-        if ($chat->user_id !== Auth::user()->user_id) {
+        if ($chat->user_id !== Auth::user()->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -70,7 +70,7 @@ class ChatController extends Controller
      */
     public function getUserChats()
     {
-        $chats = Chat::where('user_id', Auth::user()->user_id)
+        $chats = Chat::where('user_id', Auth::user()->id)
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($chat) {
@@ -108,7 +108,7 @@ class ChatController extends Controller
         }
 
         // Check if user owns the chat
-        if ($chat->user_id !== Auth::user()->user_id) {
+        if ($chat->user_id !== Auth::user()->id) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

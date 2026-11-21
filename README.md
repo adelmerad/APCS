@@ -189,7 +189,7 @@ cd ../ai-service
 cp .env.example .env
 # Edit .env:
 # API_BASE_URL=http://backend:8080
-# API_SERVICE_TOKEN=your-secure-token
+# GEMINI_API_KEY=your-gemini-key
 # OLLAMA_BASE_URL=http://ollama:11434
 # OLLAMA_MODEL=llama3.2
 
@@ -408,7 +408,7 @@ flowchart TD
 | | POST | `/admin/config/capacity` | Admin | Set capacity |
 | **AI** | GET | `/chat` | User | New chat |
 | | POST | `/ai/generate` | User | Get AI response |
-| **Internal** | POST | `/internal/tools/user-bookings` | Service | Get bookings (AI) |
+| **Internal** | POST | `/internal/tools/user-bookings` | User token (forwarded by the AI service) | Get the current user's bookings (AI) |
 
 ### Example Requests
 
@@ -479,7 +479,6 @@ DEFAULT_CAPACITY=10
 DEFAULT_LATE_CAPACITY=2
 
 AI_SERVICE_URL=http://ai-service:8001/api
-AI_SERVICE_TOKEN=your-internal-token
 ```
 
 ### Frontend (.env)
@@ -490,7 +489,7 @@ VITE_API_URL=http://localhost:8080/api
 ### AI Service (.env)
 ```env
 API_BASE_URL=http://backend:8080
-API_SERVICE_TOKEN=your-internal-token
+GEMINI_API_KEY=your-gemini-key
 OLLAMA_BASE_URL=http://ollama:11434
 OLLAMA_MODEL=llama3.2
 ```

@@ -30,7 +30,7 @@ class AiController extends Controller
         }
 
         // Check if user owns the chat
-        if ($chat->user_id !== Auth::user()->id) {
+        if ((int) $chat->user_id !== (int) Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -52,6 +52,7 @@ class AiController extends Controller
                 ->get()
                 ->map(function ($msg) {
                     return [
+                        'message_id' => (string) $msg->id,
                         'sender' => $msg->sender,
                         'message' => $msg->message,
                         'index' => $msg->index,
@@ -60,11 +61,11 @@ class AiController extends Controller
                 })
                 ->toArray();
 
-            // Call Python API with all messages (NO API KEY)
+            // Call the AI service on behalf of the user
             $aiResponse = $this->callPythonAPI(
                 $request->chat_id,
                 $request->message,
-                Auth::user(),
+                $request->bearerToken(),
                 $allMessages
             );
 
@@ -92,32 +93,30 @@ class AiController extends Controller
     }
 
     /**
-     * Call Python API endpoint with all chat messages
-     * Simple HTTP POST - NO API KEY
+     * Call the AI service with the chat messages.
+     *
+     * We forward the user's own token instead of a user_id: the AI service
+     * passes it to /api/internal/tools/*, where Sanctum identifies the user.
+     * Nobody can ask the assistant for another user's data by sending a
+     * different id, and the AI service refuses calls without a token.
      */
-    private function callPythonAPI($chatId, $currentMessage, $user, $allMessages)
+    private function callPythonAPI($chatId, $currentMessage, $userToken, $allMessages)
     {
         // Get Python API URL
         $pythonApiUrl = config('services.ai.url', env('AI_SERVICE_URL', 'http://localhost:8001/api'));
         $timeout = config('services.ai.timeout', env('AI_SERVICE_TIMEOUT', 30));
 
-        // Payload with all chat messages
         $payload = [
-            'chat_id' => $chatId,
-            'user_id' => $user->id,
-            'user_name' => $user->name,
-            'user_role' => $user->role,
+            'chat_id' => (string) $chatId,
             'message' => $currentMessage,
             'messages' => $allMessages,
         ];
 
-        // Make simple HTTP POST request (NO Authorization header)
         /** @var Response $response */
         $response = Http::timeout($timeout)
-            ->withHeaders([
-                'Content-Type' => 'application/json',
-            ])
-            ->post($pythonApiUrl . '/chat', $payload);
+            ->withToken($userToken)
+            ->acceptJson()
+            ->post(rtrim($pythonApiUrl, '/') . '/ai/generate', $payload);
 
         // Check if request was successful
         if (!$response->successful()) {

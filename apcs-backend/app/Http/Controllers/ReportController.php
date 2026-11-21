@@ -30,7 +30,7 @@ class ReportController extends Controller
 
         $incident = Incident::create([
             'booking_id' => $request->booking_id,
-            'reporter_id' => Auth::user()->user_id,
+            'reporter_id' => Auth::user()->id,
             'message' => $request->message,
             'status' => 'pending',
         ]);

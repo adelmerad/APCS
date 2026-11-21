@@ -57,7 +57,7 @@ class UserController extends Controller
         $user = $request->user();
 
         return response()->json([
-            'user_id' => $user->user_id,
+            'user_id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
             'role' => $user->role,
@@ -67,7 +67,7 @@ class UserController extends Controller
     {
         $user = $request->user();
 
-        $bookings = Booking::where('user_id', $user->user_id)
+        $bookings = Booking::where('user_id', $user->id)
             ->with('timeslot')
             ->get()
             ->map(function ($booking) {
